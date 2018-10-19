@@ -1,0 +1,385 @@
+* 打印
+close data all
+close table all
+WAIT WINDOW  "正在收集数据......" NOWAIT NOCLEAR
+SELECT 0
+USE ..\data\应收款2.dbf EXCLUSIVE 
+COPY all to ..\testre.dbf 
+DELETE FOR ALLTRIM(客户号) = '合计'
+pack
+SUM 金额 TO 金额s
+SUM 已收金额 TO 已收金额s
+* 按单据号汇总
+INDEX ON 单据号 TO ..\dhndx.idx
+USE
+SELECT 0
+USE ..\data\应收款2.dbf index ..\dhndx.idx
+TOTAL TO ..\test.dbf ON 单据号 FIELDS 清
+USE
+* 按单据号作小计,复制到 应收款p.dbf
+SELECT 1
+USE ..\data\应收款p.dbf EXCLUSIVE
+ZAP
+SELECT 2
+USE ..\test.dbf EXCLUSIVE 
+INDEX ON 日期 TO ..\rqndx.idx
+USE ..\test.dbf INDEX ..\rqndx.idx EXCLUSIVE 
+COPY all TO ..\test3.dbf 
+ZAP 
+APPEND FROM ..\test3.dbf && 按日期排列
+COUNT TO ss
+GO TOP 
+DELETE FILE ..\test3.dbf
+ 
+SELECT 3
+USE ..\data\应收款2.dbf
+
+kk = 1
+
+DO whil .t.
+  IF kk>ss
+   EXIT
+  ENDIF 
+  
+  SELECT 2
+  GO kk
+    dhs1 = 单据号 && 从汇总表中取出单据号 
+  SELECT 3
+  COPY TO ..\test1.dbf FOR 单据号 = dhs1  && 从应收明细中按单据号取出数据 
+  SELECT 0
+  USE ..\test1.dbf
+  COUNT TO ss1  && 统计记录数，如果 > 1 就要合计
+  USE
+  IF ss1 > 1
+  SELECT 0
+  USE ..\test1.dbf 
+  SUM 已收金额 TO 已收金额1
+  SUM 金额 TO 金额1
+  APPEND BLANK 
+  REPLACE  组织 with '小计',金额 with 金额1,已收金额 with 已收金额1,余额 with 金额1-已收金额1
+  USE 
+  ENDIF   
+  SELECT 1
+  APPEND FROM ..\test1.dbf
+  kk = kk+1
+ENDDO 
+SELECT 1
+* 加入总合计
+APPEND BLANK 
+  REPLACE  组织 with '合计',金额 with 金额s,已收金额 with 已收金额s,余额 with 金额s-已收金额s
+USE
+SELECT 2
+USE
+SELECT 3
+USE
+CLOSE DATABASES ALL 
+CLOSE TABLES ALL 
+
+
+**********************
+*----- 
+#INCLUDE Excel8.h
+#DEFINE False .F.
+#DEFINE True .T.
+LOCAL loExcel, lcOldError, lcRange, lnSheets, lnCounter
+
+**
+    SELECT * ;
+        FROM ..\data\应收款p.dbf ;
+        INTO CURSOR Output
+wait window '正在启动 ‘EXCEL’表格，请稍候……' nowait noclear
+
+
+* 创建EXCEL 对象，添加EXCEL模版
+lcOldError = ON("ERROR")
+ON ERROR loExcel = .NULL.
+loExcel = GetObject(, "Excel.Application")
+ON ERROR &lcOldError
+
+IF ISNULL(loExcel)
+     loExcel = CreateObject( "Excel.Application" )
+ENDIF
+
+loExcel.visible = .f.                                 && 让 EXCEL 可视 / .f. 为不可视
+
+* .ActiveWorkbook.Close  && 关闭打开的文件
+*loExcel.workbooks.add('C:\HYZZ\DOC_T\干部名册.xlt')   && 添加模版
+loExcel.workbooks.add('c:\WINDOWS\Application Data\Microsoft\Templates\染厂欠款对帐单.xlt')   && 添加模版,模版默认保存位置： 'C:\WINDOWS\Application Data\Microsoft\Templates'
+
+WAIT WINDOW "正在写入 Excel 电子表格数据，请等候......" NOWAIT NOCLEAR
+
+*
+WITH loExcel
+
+****
+     WITH .Range("B3")
+          .Value = khmc1
+          WITH .font
+               .NAME = "宋体"        && "Arial"
+               .Bold = .t.    && T 粗体  ; F 正常
+               .Size = 12
+               .Underline = xlUnderlineStyleNone         &&xlUnderlineStyleSingle
+             
+          ENDWITH
+*******************水平靠左               
+    With .Range("B3")
+*        .HorizontalAlignment = xlCenter  && 水平居中
+         .HorizontalAlignment = xlLeft   && 水平靠左
+        .VerticalAlignment = xlCenter    &&直居中
+        .WrapText = False
+        .Orientation = 0
+        .ShrinkToFit = False
+        .MergeCells = False
+        .Merge
+**************&& 水平靠左        
+       .AddIndent = False
+        .IndentLevel = 0
+      .MergeCells = True
+***************        
+     EndWith       
+*******************          
+     ENDWITH   
+****
+  ****
+     WITH .Range("F3")
+          .Value = alltrim(str(d_qx))+'天'
+          WITH .font
+               .NAME = "宋体"        && "Arial"
+               .Bold = .f.    && T 粗体  ; F 正常
+               .Size = 12
+               .Underline = xlUnderlineStyleNone         &&xlUnderlineStyleSingle
+             
+          ENDWITH
+     ENDWITH   
+****
+
+  ****
+     WITH .Range("L3")
+          .Value = DTOC(DATE())
+          WITH .font
+               .NAME = "宋体"        && "Arial"
+               .Bold = .f.    && T 粗体  ; F 正常
+               .Size = 12
+               .Underline = xlUnderlineStyleNone         &&xlUnderlineStyleSingle
+             
+          ENDWITH
+     ENDWITH   
+****
+*  
+* ss = 34 && 数据库记录有 ss 条
+SELECT Output
+count to ss
+
+* 设定每页 27 行
+    if ss - 27*int(ss/27) <> 0
+        余数s = 27*(int(ss/27)+1) - ss
+          else
+        余数s = 0  
+    endif
+kk = 1
+  do whil .t.
+      if kk > ss - 1
+           exit
+      endif
+      
+     .Range("A5").Select   &&光标到单元格 A5
+     .Selection.EntireRow.Insert   && 插入一行
+*     .Selection.RowHeight = 33     && 设置行宽
+* 设置字体
+     WITH .Range("A5:M5")
+          WITH .font
+               .NAME = "宋体"        && "Arial"
+*              .Bold = .T.    && 粗体
+               .Size = 12
+               .Underline = xlUnderlineStyleNone
+         ENDWITH
+     ENDWITH
+          
+     kk = kk +1
+   enddo
+   
+ * 补足整页行数 
+if 余数s > 0
+  kk = 1
+    do whil .t.
+       if kk > 余数s 
+          exit
+       endif
+     .Range("A5").Select   &&光标到单元格 A5
+     .Selection.EntireRow.Insert   && 插入一行
+*     .Selection.RowHeight = 33     && 设置行高
+* 设置字体
+     WITH .Range("A5:M5")
+          WITH .font
+               .NAME = "宋体"        && "Arial"
+*              .Bold = .T.    && 粗体
+               .Size = 12
+               .Underline = xlUnderlineStyleNone
+         ENDWITH
+     ENDWITH
+          
+     
+     kk = kk +1       
+     enddo
+     
+endif
+*********************     
+*********************     
+* 准备写入数据         
+  .Range("A5").Select   &&光标到单元格 A5
+  
+  WAIT WINDOW  "准备写入 Excel 单元格数据......" NOWAIT NOCLEAR
+
+      SELECT Output
+      GO TOP
+
+      
+     *-- Populate the report
+     *--
+     *-- Note the use of Cells() in this case instead of Range().
+
+     lnRow = 5  &&从第5行开始写入数据库记录
+     SCAN
+          WAIT WINDOW NOWAIT "数据库记录写入单元格: 记录" + ALLTRIM(STR(RECNO())) + ;
+               " of " + ALLTRIM(STR(RECCOUNT()))
+          *-- Read the record into the cells
+
+          .Cells(lnRow, 1).Value = DTOC(Output.日期) 
+          IF Output.单据号 > 0 AND Output.单据号 < 9999999 AND ALLTRIM(组织) <> '应收小计' AND ALLTRIM(组织) <> '已收小计/余额'
+          .Cells(lnRow, 2).Value = ALLTRIM(STR(Output.单据号))
+          ENDIF
+          
+          .Cells(lnRow, 3).Value = alltrim(Output.布别) 
+          .Cells(lnRow, 4).Value = alltrim(Output.组织) 
+             
+
+          IF Output.码数<>0
+          .Cells(lnRow, 5).Value = ALLTRIM(str(Output.码数,14,2))
+ * 水平靠右
+   With .Range("E"+ALLTRIM(STR(lnRow)))
+        .HorizontalAlignment = xlRight
+        .VerticalAlignment = xlCenter
+        .WrapText = False
+        .Orientation = 0
+        .AddIndent = False
+        .ShrinkToFit = False
+        .MergeCells = False
+        .NumberFormatLocal = "#,##0.00_ "
+    EndWith
+    
+          ENDIF 
+***********************
+          .Cells(lnRow, 6).Value = alltrim(Output.单位)
+          .Cells(lnRow, 7).Value = alltrim(Output.币种)
+          
+          IF Output.单价 <>0          
+          .Cells(lnRow, 8).Value = ALLTRIM(str(Output.单价,14,2))
+************************************************************
+ * 水平靠右
+   With .Range("H"+ALLTRIM(STR(lnRow)))
+        .HorizontalAlignment = xlRight
+        .VerticalAlignment = xlCenter
+        .WrapText = False
+        .Orientation = 0
+        .AddIndent = False
+        .ShrinkToFit = False
+        .MergeCells = False
+        .NumberFormatLocal = "#,##0.00_ "
+    EndWith
+**********************************************************               
+          ENDIF
+          IF Output.金额<>0
+          .Cells(lnRow, 9).Value = ALLTRIM(str(Output.金额,14,2))
+************************************************************
+ * 水平靠右
+   With .Range("I"+ALLTRIM(STR(lnRow)))
+        .HorizontalAlignment = xlRight
+        .VerticalAlignment = xlCenter
+        .WrapText = False
+        .Orientation = 0
+        .AddIndent = False
+        .ShrinkToFit = False
+        .MergeCells = False
+        .NumberFormatLocal = "#,##0.00_ "
+    EndWith
+**********************************************************             
+          ENDIF
+          IF Output.收据号 <> 0
+          .Cells(lnRow, 10).Value = ALLTRIM(STR(Output.收据号))
+************************************************************
+ * 水平靠右
+   With .Range("J"+ALLTRIM(STR(lnRow)))
+        .HorizontalAlignment = xlRight
+        .VerticalAlignment = xlCenter
+
+    EndWith
+**********************************************************             
+          ENDIF
+          IF Output.已收金额 <>0
+          .Cells(lnRow, 11).Value = ALLTRIM(STR(Output.已收金额,14,2))
+************************************************************
+ * 水平靠右
+   With .Range("K"+ALLTRIM(STR(lnRow)))
+        .HorizontalAlignment = xlRight
+        .VerticalAlignment = xlCenter
+        .WrapText = False
+        .Orientation = 0
+        .AddIndent = False
+        .ShrinkToFit = False
+        .MergeCells = False
+        .NumberFormatLocal = "#,##0.00_ "
+    EndWith
+**********************************************************             
+          ENDIF
+          IF Output.余额 <>0
+          .Cells(lnRow, 12).Value = ALLTRIM(STR(Output.余额,14,2))
+************************************************************
+ * 水平靠右
+   With .Range("L"+ALLTRIM(STR(lnRow)))
+        .HorizontalAlignment = xlRight
+        .VerticalAlignment = xlCenter
+        .WrapText = False
+        .Orientation = 0
+        .AddIndent = False
+        .ShrinkToFit = False
+        .MergeCells = False
+        .NumberFormatLocal = "#,##0.00_ "
+    EndWith
+**********************************************************             
+          ENDIF
+          .Cells(lnRow, 13).Value = ALLTRIM(Output.备注)+ALLTRIM(Output.合同号)
+*          .Cells(lnRow, 14).Value = ALLTRIM(Output.到期否)
+         IF Output.日期 <> {    .  .  }
+           .Cells(lnRow, 14).Value =DTOC(Output.日期+qx1)
+         ENDIF          
+          lnRow = lnRow + 1
+     ENDSCAN
+*  
+  loExcel.visible = .t.                                 && 让 EXCEL 可视 / .f. 为不可视
+*  .ActiveWorkbook.SaveAs(文件名)                                && 保存
+******
+* .ActiveWindow.SelectedSheets.PrintOut.Copies = 0
+*  .ActiveWindow.SelectedSheets.PrintOut    && 打印
+*   .ActiveWindow.SelectedSheets.PrintOut Copies:=1, Preview:=True
+
+*  GETPRINTER()  && 设置打印机
+  
+ *  .Preview=True
+ ******
+  Release loExcel
+  CLOSE DATA ALL
+  CLOSE TABLE ALL
+wait clear
+DELETE FILE ..\test.dbf
+DELETE FILE ..\test1.dbf
+DELETE FILE ..\dhndx.dbf 
+SELECT 0
+USE ..\data\应收款2.dbf EXCLUSIVE 
+zap
+APPEND FROM ..\testre.dbf 
+USE
+DELETE FILE ..\testre.dbf
+
+DO FORM ..\forms\d染厂查询应收帐.scx
+RETURN
+ENDWITH

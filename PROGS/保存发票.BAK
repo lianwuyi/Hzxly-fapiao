@@ -1,0 +1,272 @@
+*
+set cent on
+set date to ansi
+set talk off
+SET SAFETY OFF
+SET DELETE ON
+SET EXCLUSIVE OFF
+
+close data all
+close table all
+
+* 断开所有数据库连接
+SQLDisconnect(0)
+
+* 设定连接句柄为公共变量,可以为后面的程式引用
+Release lnHandle
+Public lnHandle
+lnHandle = 0
+
+*连接数据库
+DO ..\progs\连接数据库.prg
+
+If lnHandle > 0 && 连接成功,返回非 0 正数
+
+***
+* 查找是否有相同ID的记录
+	lnReturn =SQLExec(lnHandle,'select 发票号 from 发票 WHERE 发票号 = ?dhs1')
+	IF  lnReturn > 0
+		COUNT TO ss
+		USE
+		 ELSE 
+		 * 断开所有数据库连接
+         SQLDisconnect(0)
+         Wait Window '提示：查询发票不成功，请稍候再保存数据……' Nowait Noclear
+         RETURN 
+		DO FORM ..\forms\发票录入.scx
+         
+		 RETURN 
+	ENDIF
+
+	IF ss > 0
+* 断开所有数据库连接
+		SQLDisconnect(0)
+		WAIT WINDOW '操作失败：存在相同发票号记录，不能保存！' NOWAIT NOCLEAR
+		CLOSE DATABASES ALL 
+		CLOSE TABLES ALL 
+		DO FORM ..\forms\发票录入.scx
+
+		RETURN
+	ENDIF
+ENDIF 
+
+SELECT 1
+USE ..\data\发票.dbf excl 
+DELETE FOR LEN(ALLTRIM(货物名称)) = 0 AND 价税合计 = 0 
+PACK
+COUNT TO ssn1
+
+IF ssn1 = 0
+WAIT WINDOW '提示:没有可以保存的数据!' NOWAIT NOCLEAR 
+RETURN 
+ENDIF
+
+kk = 1
+DO whil .t.
+  IF kk>ssn1
+  CLOSE DATABASES ALL 
+  CLOSE TABLES ALL 
+  * 删除临时表数据 售货单
+    EXIT 
+  ENDIF
+   
+  SELECT 1
+  GO  kk
+  COPY TO ..\test.dbf NEXT 1 && 复制当前记录
+* 
+*取得一个:售货单行号												
+
+Wait Window '提示:正在查询数据，请稍候……' Nowait Noclear
+
+* 断开所有数据库连接
+SQLDisconnect(0)
+
+* 设定连接句柄为公共变量,可以为后面的程式引用
+Release lnHandle
+Public lnHandle
+lnHandle = 0
+
+*连接数据库
+Do ..\progs\连接数据库.prg
+
+If lnHandle > 0 && 连接成功,返回非 0 正数
+* 启用事务处理和锁定表
+&& 设置成手工事务处理模式，由代码来控制
+	= SQLSETPROP(lnHandle, 'Transactions', 2)
+
+**下面的命令从hm表里选取记录，并给该表加上独占锁(TABLELOCKX)，一直到该事务结束(HOLDLOCK)
+	ln1=SQLEXEC(lnHandle, "SELECT * FROM hm WITH (TABLOCKX, HOLDLOCK)")
+   *  ln2=SQLEXEC(lnHandle,'select 发票行号 from hm ')
+	Select sqlresult  && sqlresult 表是查询后的SQL临时表
+	ids1 = 发票行号
+	Use
+	ln3 =SQLEXEC(lnHandle,"update hm set 发票行号 = ?(ids1+1)") && 将 售货单行号 +1 
+
+	If ln1 > 0 And ln3 > 0 && 成功锁住表,并完成上面的操作
+		=Sqlcommit(lnHandle) && 提交修改，并保存
+***关闭连接，事务自动结束，锁也解开
+		=SQLDisconnect(lnHandle)
+*	删除DLL变量，删除本程式公共变量
+		Release lnHandle && 删除连接句柄变量
+		Clear Dlls
+**************************************************************************************************************
+	Else && 不成功，放弃事务处理
+***如果要放弃整个事务处理，用
+		=Sqlrollback(lnHandle)
+***关闭连接，事务自动结束，锁也解开
+		=SQLDisconnect(lnHandle)
+*	删除DLL变量，删除本程式公共变量
+		Release lnHandle && 删除连接句柄变量
+		Clear Dlls
+**
+		Wait Window '提示：取得发票行号不成功，请稍后再试……' Nowait Noclear
+		Return
+	Endif
+Else
+***关闭连接，事务自动结束，锁也解开
+	=SQLDisconnect(lnHandle)
+*	删除DLL变量，删除本程式公共变量
+	Release lnHandle && 删除连接句柄变量
+	Clear Dlls
+	Return
+ENDIF
+
+*****************************************************************************************************
+Select 2
+Use ..\test.Dbf
+
+* 修改变量值*****************************************
+dhs1 = 发票号
+kprq1 = 开票日期
+kdkhh1 = Alltrim(开单客户号)
+kpdw1 = Alltrim(开票单位)
+hwmc1 = Alltrim(货物名称)
+ggxh1 = ALLTRIM(规格型号)
+dw1 = Alltrim(单位)
+sl1 = 数量
+dj1 = 单价
+jshj1 = 价税合计
+wmkhh1 = Alltrim(外贸客户号)
+wmgs1 = Alltrim(外贸公司)
+bz1 = ALLTRIM(备注)
+rzjh1 = ALLTRIM(入帐记号)
+*****
+fphh1 = ids1 && 发票行号
+czy1 = ALLTRIM(操作员)
+lb1 = ALLTRIM(类别)
+USE
+
+Wait Window '提示:正在保存数据，请稍候……' Nowait Noclear
+
+* 断开所有数据库连接
+SQLDisconnect(0)
+
+* 设定连接句柄为公共变量,可以为后面的程式引用
+Release lnHandle
+Public lnHandle
+lnHandle = 0
+
+*连接数据库
+Do ..\progs\连接数据库.prg
+
+If lnHandle > 0 && 连接成功,返回非 0 正数
+
+***
+* 查找记录，如果有相同售货单行号，则不能录入保存
+	lnReturn =SQLExec(lnHandle,'select 发票行号 from 发票 WHERE 发票行号 = ?fphh1')
+	If  lnReturn > 0
+		Count To ss1
+		USE
+		ELSE 
+		use
+	ENDIF
+
+	If ss1 > 0
+* 断开所有数据库连接
+		SQLDisconnect(0)
+		Wait Window '提示：操作失败：已存在相同的发票行号，不能保存数据！' Nowait Noclear
+		Close Databases All
+		Close Tables All
+		Return
+	ENDIF
+	
+******************************************************************************************  
+* 先增加单据号，以及操作员姓名，
+* 添加记录
+	ln1=SQLExec(lnHandle,"insert into 发票(发票行号,操作员,发票号) values (?fphh1,?czy1,?dhs1)")
+************************************************************************************
+* 修改记录
+	ln2=SQLExec(lnHandle,'update 发票 set 开票日期 = ?kprq1,开单客户号 = ?kdkhh1,开票单位 = ?kpdw1, ;
+      规格型号=?ggxh1,单位=?dw1,数量=?sl1,货物名称 = ?hwmc1;
+	  WHERE 发票行号 = ?fphh1')
+	ln3=SQLExec(lnHandle,'update 发票 set 单价=?dj1,价税合计=?jshj1,外贸客户号=?wmkhh1,外贸公司=?wmgs1, ;
+	  备注=?bz1,入帐记号= ?rzjh1 ,类别=?lb1;
+	  WHERE 发票行号 = ?fphh1') 
+	  
+	  
+*保存修改前
+   ln4=SQLExec(lnHandle,"insert into 原发票(发票行号,操作员,发票号) values (?fphh1,?czy1,?dhs1)")
+************************************************************************************
+* 修改记录
+	ln5=SQLExec(lnHandle,'update 原发票 set 开票日期 = ?kprq1,开单客户号 = ?kdkhh1,开票单位 = ?kpdw1, ;
+      规格型号=?ggxh1,单位=?dw1,数量=?sl1,货物名称 = ?hwmc1;
+	  WHERE 发票行号 = ?fphh1')
+	ln6=SQLExec(lnHandle,'update 原发票 set 单价=?dj1,价税合计=?jshj1,外贸客户号=?wmkhh1,外贸公司=?wmgs1, ;
+	  备注=?bz1,入帐记号= ?rzjh1 ,类别=?lb1;
+	  WHERE 发票行号 = ?fphh1') 
+	   * 
+	If ln1 > 0 And ln2 > 0 And ln3 > 0 AND ln4>0 AND ln5>0 AND ln6>0 
+*返回 > 0 更新成功，反之失败。
+
+* 先断开连接，再删除数据源，删除DLL变量，删除本程式公共变量
+* 断开所有数据连接
+		SQLDisconnect(0)
+*	删除DLL变量，删除本程式公共变量
+		Release lnHandle && 删除连接句柄变量
+		Clear Dlls
+**
+*		Wait Window '提示：保存数据成功……' Nowait Noclear
+
+	Else  && 保存不成功
+
+* 断开所有数据连接
+		SQLDisconnect(0)
+*	删除DLL变量，删除本程式公共变量
+		Release lnHandle && 删除连接句柄变量
+		Clear Dlls
+**
+
+		Wait Window '提示：保存修改失败，请稍后再试……' Nowait Noclear
+		 Do Form ..\Forms\发票录入.scx
+       RETURN 
+	Endif
+
+Else
+* 以下连接不成功的命令行
+* 断开所有数据连接
+	SQLDisconnect(0) && 断开所有数据连接
+	Release lnHandle && 删除连接句柄变量
+	Clear Dlls
+	Wait Window '提示:未能连接数据库,不能保存修改数据,请稍后再试……' Nowait Noclear
+	Close Databases All
+	Close Tables All
+
+	  Do Form ..\Forms\发票录入.scx
+
+	Return
+Endif
+
+kk = kk+1
+ENDDO
+
+CLOSE DATABASES ALL 
+CLOSE TABLES ALL 
+Wait Window '提示：保存成功!' Nowait Noclear
+SELECT 0
+USE ..\data\发票.dbf EXCLUSIVE
+ZAP
+USE 
+Delete File ..\test.Dbf
+Do Form ..\Forms\发票录入.scx
+
+
